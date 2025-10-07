@@ -1,5 +1,6 @@
 #include "main.h"
 #include "core/stb/stb.h"
+#include "core/time/timer.h"
 
 namespace fs = std::filesystem;
 
@@ -44,21 +45,66 @@ void encode(std::filesystem::path input, std::filesystem::path output)
 
 void program(wk::ArgumentParser& args)
 {
-	fs::path input = args.get("input");
-	fs::path output = args.get("output");
-	std::string mode = args.get("mode");
-	compress_data = args.get<bool>("compress-data");
-	texture_only = args.get<bool>("texture-only");
-	use_padding = args.get<bool>("use-padding");
+    fs::path input = args.get("input");
+    fs::path output = args.get("output");
+    std::string mode = args.get("mode");
+    compress_data = args.get<bool>("compress-data");
+    texture_only = args.get<bool>("texture-only");
+    use_padding = args.get<bool>("use-padding");
 
-	if (mode == "decode")
-	{
-		decode(input, output);
-	}
-	else if (mode == "encode")
-	{
-		encode(input, output);
-	}
+    if (!fs::exists(input)) {
+        std::cout << "Input path does not exist" << std::endl;
+        return;
+    }
+
+    wk::Timer operation_timer;
+
+    if (mode == "decode")
+    {
+        if (fs::is_directory(input))
+        {
+            fs::path dump_dir = input / "dump";
+            if (!fs::exists(dump_dir))
+                fs::create_directory(dump_dir);
+
+            for (auto& entry : fs::directory_iterator(input))
+            {
+                if (!entry.is_regular_file())
+                    continue;
+
+                fs::path file_path = entry.path();
+				if (file_path.extension() != ".sctx")
+					continue;
+
+                std::cout << "Decoding file: " << file_path.filename().string() << std::endl;
+
+                try {
+                    fs::path output_file = dump_dir / file_path.stem();
+                    decode(file_path, output_file);
+                }
+                catch (const std::exception& e)
+                {
+                    std::cout << "Error decoding " << file_path.filename().string()
+                              << ": " << e.what() << std::endl;
+                }
+            }
+        }
+        else
+        {
+            decode(input, output);
+        }
+    }
+    else if (mode == "encode")
+    {
+        if (fs::is_directory(input)) {
+            std::cout << "Encode mode does not support directory input" << std::endl;
+            return;
+        }
+
+        encode(input, output);
+    }
+
+    std::cout << "Operation took: " << operation_timer.elapsed() / 1000.0 << " seconds" << std::endl;
 }
 
 int main(int argc, char* argv[])
@@ -73,7 +119,7 @@ int main(int argc, char* argv[])
 		.choices("decode", "encode");
 
 	parser.add_argument("input")
-		.help("Path to sctx or info file");
+		.help("Path to sctx or info file (or dir for decode)");
 
 	parser.add_argument("output")
 		.default_value("")

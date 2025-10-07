@@ -60,6 +60,7 @@ void SCTXSerializer::load_default_image(std::filesystem::path path)
 		target_type = ScPixel::from_gl_format(file->internal_format());
 	}
 
+	m_texture_file.reset();
 	m_texture = wk::CreateRef<SupercellTexture>(*texture, target_type, generate_mip_maps);
 	m_texture->unknown_flag2 = true;
 	m_texture->use_padding = SCTXSerializer::def_padding;
@@ -68,7 +69,8 @@ void SCTXSerializer::load_default_image(std::filesystem::path path)
 
 void SCTXSerializer::load_binary(std::filesystem::path path)
 {
-	m_texture = wk::CreateRef<sc::texture::SupercellTexture>(path);
+	m_texture_file = wk::CreateRef<wk::InputFileStream>(path);
+	m_texture = wk::CreateRef<sc::texture::SupercellTexture>(*m_texture_file);
 	m_texture->read_data();
 }
 
@@ -90,6 +92,8 @@ void SCTXSerializer::load_serialized(std::filesystem::path path)
 
 		wk::InputFileStream texture_file(texture_path);
 		wk::stb::load_image(texture_file, texture);
+
+		m_texture_file.reset();
 		m_texture = wk::CreateRef<SupercellTexture>(*texture, pixel_type, generate_mips);
 		m_texture->unknown_flag1 = data[kUnkFlag1];
 		m_texture->unknown_flag2 = data[kUnkFlag2];

@@ -45,4 +45,5 @@ private:
 
 private:
 	wk::Ref<sc::texture::SupercellTexture> m_texture;
+	wk::Ref<wk::Stream> m_texture_file;
 };
