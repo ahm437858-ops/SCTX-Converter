@@ -82,16 +82,23 @@ void SCTXSerializer::load_serialized(std::filesystem::path path)
 	json data = json::parse(file);
 
 	fs::path working_dir = path.parent_path();
+	ScPixel::Type pixel_type = ScPixel::from_string(data[kPixelType]);
+	wk::Ref<wk::RawImage> streaming_texture;
 
 	{
 		fs::path texture_path = fs::path(working_dir) / data[kTexture];
-		ScPixel::Type pixel_type = ScPixel::from_string(data[kPixelType]);
 		bool generate_mips = data[kGenerateMips];
 
 		wk::Ref<wk::RawImage> texture;
-
 		wk::InputFileStream texture_file(texture_path);
 		wk::stb::load_image(texture_file, texture);
+		if (SCTXSerializer::def_streaming) {
+			streaming_texture = wk::CreateRef<wk::RawImage>(
+				(uint16_t)std::floor((float)texture->width() / 4), (uint16_t)std::floor((float)texture->height() / 4),
+				texture->depth(), texture->colorspace()
+			);
+			texture->copy(*streaming_texture);
+		}
 
 		m_texture_file.reset();
 		m_texture = wk::CreateRef<SupercellTexture>(*texture, pixel_type, generate_mips);
@@ -103,13 +110,13 @@ void SCTXSerializer::load_serialized(std::filesystem::path path)
 	auto& variants_ids = variants_data[kStreamingIds];
 	auto& variants_textures = variants_data[kTextures];
 
-	if (variants_ids.is_array())
+	if (variants_textures.is_array() && !SCTXSerializer::def_streaming)
 	{
-		m_texture->streaming_ids = variants_ids.template get<std::vector<uint32_t>>();
-	}
+		if (variants_ids.is_array())
+		{
+			m_texture->streaming_ids = variants_ids.template get<std::vector<uint32_t>>();
+		}
 
-	if (variants_textures.is_array())
-	{
 		size_t variants_count = variants_textures.size();
 		m_texture->streaming_variants = SupercellTexture::VariantsArray();
 		m_texture->streaming_variants->reserve(variants_count);
@@ -119,13 +126,18 @@ void SCTXSerializer::load_serialized(std::filesystem::path path)
 			auto& variant_texture = variants_textures[i];
 
 			fs::path texture_path = fs::path(working_dir) / variant_texture[kTexture];
-			ScPixel::Type pixel_type = ScPixel::from_string(data[kPixelType]);
+			ScPixel::Type variant_type = ScPixel::from_string(data[kPixelType]);
 
 			wk::Ref<wk::RawImage> texture;
 			wk::InputFileStream texture_file(texture_path);
 			wk::stb::load_image(texture_file, texture);
-			m_texture->streaming_variants->emplace_back(*texture, pixel_type, false);
+			m_texture->streaming_variants->emplace_back(*texture, variant_type, false);
 		}
+	}
+	else if (SCTXSerializer::def_streaming) {
+		m_texture->streaming_ids = { 3 };
+		m_texture->streaming_variants = SupercellTexture::VariantsArray();
+		m_texture->streaming_variants->emplace_back(*streaming_texture, pixel_type, false);
 	}
 }
 
