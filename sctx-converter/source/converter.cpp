@@ -13,8 +13,9 @@ constexpr auto kCompression = "compressed";
 constexpr auto kUnkFlag1 = "unknown_flag";
 constexpr auto kUnkFlag2 = "unknown_flag_1";
 
-constexpr auto kStreaming = "streaming";
-constexpr auto kStreamingIds = "ids";
+constexpr auto kProxyTextures = "proxy_textures";
+constexpr auto kAstcParams = "astc_encode_params";
+constexpr auto kTags = "tags";
 
 SCTXSerializer::SCTXSerializer(fs::path path, bool is_binary)
 {
@@ -92,7 +93,7 @@ void SCTXSerializer::load_serialized(std::filesystem::path path)
 		wk::Ref<wk::RawImage> texture;
 		wk::InputFileStream texture_file(texture_path);
 		wk::stb::load_image(texture_file, texture);
-		if (SCTXSerializer::def_streaming) {
+		if (SCTXSerializer::def_proxy) {
 			streaming_texture = wk::CreateRef<wk::RawImage>(
 				(uint16_t)std::floor((float)texture->width() / 4), (uint16_t)std::floor((float)texture->height() / 4),
 				texture->depth(), texture->colorspace()
@@ -106,38 +107,39 @@ void SCTXSerializer::load_serialized(std::filesystem::path path)
 		m_texture->unknown_flag2 = data[kUnkFlag2];
 	}
 
-	auto& variants_data = data[kStreaming];
-	auto& variants_ids = variants_data[kStreamingIds];
-	auto& variants_textures = variants_data[kTextures];
-
-	if (variants_textures.is_array() && !SCTXSerializer::def_streaming)
+	auto& tags = data[kTags];
+	if (tags.is_array())
 	{
-		if (variants_ids.is_array())
+		m_texture->tags = tags.get<std::vector<std::string>>();
+	}
+
+	auto& astc_params = data[kAstcParams];
+	if (astc_params.is_string())
+	{
+		m_texture->astc_encode_params = astc_params.get<std::string>();
+	}
+
+	auto& proxy_textures = data[kProxyTextures];
+	if (proxy_textures.is_array() && !SCTXSerializer::def_proxy)
+	{
+		size_t proxy_count = proxy_textures.size();
+		m_texture->proxy_textures.reserve(proxy_count);
+
+		for (size_t i = 0; proxy_count > i; i++)
 		{
-			m_texture->streaming_ids = variants_ids.template get<std::vector<uint32_t>>();
-		}
+			auto& proxy_texture = proxy_textures[i];
 
-		size_t variants_count = variants_textures.size();
-		m_texture->streaming_variants = SupercellTexture::VariantsArray();
-		m_texture->streaming_variants->reserve(variants_count);
-
-		for (size_t i = 0; variants_count > i; i++)
-		{
-			auto& variant_texture = variants_textures[i];
-
-			fs::path texture_path = fs::path(working_dir) / variant_texture[kTexture];
+			fs::path texture_path = fs::path(working_dir) / proxy_texture[kTexture];
 			ScPixel::Type variant_type = ScPixel::from_string(data[kPixelType]);
 
 			wk::Ref<wk::RawImage> texture;
 			wk::InputFileStream texture_file(texture_path);
 			wk::stb::load_image(texture_file, texture);
-			m_texture->streaming_variants->emplace_back(*texture, variant_type, false);
+			m_texture->proxy_textures.emplace_back(*texture, variant_type, false);
 		}
 	}
-	else if (SCTXSerializer::def_streaming) {
-		m_texture->streaming_ids = { 3 };
-		m_texture->streaming_variants = SupercellTexture::VariantsArray();
-		m_texture->streaming_variants->emplace_back(*streaming_texture, pixel_type, false);
+	else if (SCTXSerializer::def_proxy) {
+		m_texture->proxy_textures.emplace_back(*streaming_texture, pixel_type, false);
 	}
 }
 
@@ -148,6 +150,7 @@ void SCTXSerializer::save_serialized(std::filesystem::path path, ImagesT& images
 	fs::path basename = fs::path(path).stem();
 	json data = json::object();
 	
+	// Basic texture data
 	{
 		ImageInstance& image = images.emplace_back();
 		image.name = basename.string().append(SCTXSerializer::image_postfix);
@@ -159,36 +162,28 @@ void SCTXSerializer::save_serialized(std::filesystem::path path, ImagesT& images
 		data[kUnkFlag2] = m_texture->unknown_flag2;
 	}
 
-	auto streaming_textures = json::object();
-
-	if (m_texture->streaming_ids.has_value())
+	// Texture extensions
+	auto proxy_textures = json::array();
+	if (!m_texture->proxy_textures.empty())
 	{
-		streaming_textures[kStreamingIds] = m_texture->streaming_ids.value();
-	}
-
-	if (m_texture->streaming_variants.has_value())
-	{
-		json variants_info = json::array();
-
-		auto& variants = m_texture->streaming_variants.value();
-		for (size_t i = 0; variants.size() > i; i++)
+		for (size_t i = 0; m_texture->proxy_textures.size() > i; i++)
 		{
-			auto& variant = variants[i];
+			auto& proxy = m_texture->proxy_textures[i];
 			ImageInstance& image = images.emplace_back();
 			image.name = basename.string().append("_variant_").append(std::to_string(i)).append(SCTXSerializer::image_postfix);
-			SCTXSerializer::decode_texture(variant, image.image);
+			SCTXSerializer::decode_texture(proxy, image.image);
 
-			json variant_info = json::object();
-			variant_info[kTexture] = image.name;
-			variant_info[kPixelType] = ScPixel::to_string(variant.pixel_type());
-			variants_info.push_back(variant_info);
+			json proxy_info = json::object();
+			proxy_info[kTexture] = image.name;
+			proxy_info[kPixelType] = ScPixel::to_string(proxy.pixel_type());
+			proxy_textures.push_back(proxy_info);
 		}
-
-		streaming_textures[kTextures] = variants_info;
 	}
 
-	data[kStreaming] = streaming_textures;
-
+	data[kTags] = m_texture->tags;
+	data[kAstcParams] = m_texture->astc_encode_params;
+	data[kProxyTextures] = proxy_textures;
+	
 	wk::OutputFileStream stream(path);
 	auto result = data.dump(2);
 	stream.write(result.data(), result.size());

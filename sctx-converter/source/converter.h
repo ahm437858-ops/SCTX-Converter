@@ -24,7 +24,7 @@ public:
 	static inline bool def_generate_mip_maps = true;
 	static inline bool def_compression = true;
 	static inline bool def_padding = false;
-	static inline bool def_streaming = false;
+	static inline bool def_proxy = false;
 	static inline sc::texture::ScPixel::Type def_pixel_type = sc::texture::ScPixel::Type::ASTC_RGBA8_8x8;
 
 public:

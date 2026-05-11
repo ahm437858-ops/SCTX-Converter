@@ -38,7 +38,7 @@ void encode(std::filesystem::path input, std::filesystem::path output)
 
 	SCTXSerializer::def_compression = compress_data;
 	SCTXSerializer::def_padding = use_padding;
-	SCTXSerializer::def_streaming = generate_streaming;
+	SCTXSerializer::def_proxy = generate_proxy;
 
 	SCTXSerializer serializer(input, false);
 	serializer.save_binary(output, compress_data, use_padding);
@@ -52,7 +52,7 @@ void program(wk::ArgumentParser& args)
     compress_data = args.get<bool>("compress-data");
     texture_only = args.get<bool>("texture-only");
     use_padding = args.get<bool>("use-padding");
-    generate_streaming = args.get<bool>("generate-streaming");
+    generate_proxy = args.get<bool>("generate-proxy");
 
     if (!fs::exists(input)) {
         std::cout << "Input path does not exist" << std::endl;
@@ -139,9 +139,9 @@ int main(int argc, char* argv[])
 		.flag()
 		.help("Decompress only texture, without json file");
 
-	parser.add_argument("--generate-streaming", "-t")
+	parser.add_argument("--generate-proxy", "-p")
 		.flag()
-		.help("Generates streaming textures when encoding textures");
+		.help("Generates proxy textures when encoding textures");
 
 	try
 	{
